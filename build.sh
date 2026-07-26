@@ -18,7 +18,14 @@ if [ ! -d "fontconfig" ]
 then
   git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git
   cd fontconfig
-  git checkout 2.18.1
+  git checkout 2.18.3
+  cd ..
+fi
+
+if [ ! -f "fontconfig/configure" ]
+then
+  cd fontconfig
+  autoreconf -fiv -Wno-obsolete
   cd ..
 fi
 
@@ -57,28 +64,33 @@ do
   export CC="${TOOLCHAIN}/bin/${TARGET}${API_LEVEL}-clang"
   export CXX="${TOOLCHAIN}/bin/${TARGET}${API_LEVEL}-clang++"
 
-  # Locate prebuilt dependencies
   FREETYPE_PREBUILT=$($READLINK -f ../prebuilt/freetype)
   LIBXML2_PREBUILT=$($READLINK -f ../prebuilt/libxml2)
-  ZLIB_PREBUILT=$($READLINK -f ../prebuilt/zlib)
   LIBPNG_PREBUILT=$($READLINK -f ../prebuilt/libpng)
+  ZLIB_PREBUILT=$($READLINK -f ../prebuilt/zlib)
 
   export PKG_CONFIG_PATH="${FREETYPE_PREBUILT}/lib/${ABI}/pkgconfig:${LIBXML2_PREBUILT}/lib/${ABI}/pkgconfig:${ZLIB_PREBUILT}/lib/${ABI}/pkgconfig:${LIBPNG_PREBUILT}/lib/${ABI}/pkgconfig"
   export PKG_CONFIG_LIBDIR="${FREETYPE_PREBUILT}/lib/${ABI}/pkgconfig:${LIBXML2_PREBUILT}/lib/${ABI}/pkgconfig:${ZLIB_PREBUILT}/lib/${ABI}/pkgconfig:${LIBPNG_PREBUILT}/lib/${ABI}/pkgconfig"
 
-  export CFLAGS="-fPIC -O3 -I${FREETYPE_PREBUILT}/include -I${FREETYPE_PREBUILT}/include/freetype2 -I${LIBXML2_PREBUILT}/include/libxml2 -I${ZLIB_PREBUILT}/include -Wl,-z,max-page-size=16384"
-  export CXXFLAGS="-fPIC -O3 -I${FREETYPE_PREBUILT}/include -I${FREETYPE_PREBUILT}/include/freetype2 -I${LIBXML2_PREBUILT}/include/libxml2 -I${ZLIB_PREBUILT}/include -Wl,-z,max-page-size=16384"
+  export CFLAGS="-fPIC -O3 -I${FREETYPE_PREBUILT}/include -I${FREETYPE_PREBUILT}/include/freetype2 -I${LIBXML2_PREBUILT}/include/libxml2 -I${ZLIB_PREBUILT}/include"
+  export CXXFLAGS="-fPIC -O3 -I${FREETYPE_PREBUILT}/include -I${FREETYPE_PREBUILT}/include/freetype2 -I${LIBXML2_PREBUILT}/include/libxml2 -I${ZLIB_PREBUILT}/include"
   export LDFLAGS="-L${FREETYPE_PREBUILT}/lib/${ABI} -L${LIBXML2_PREBUILT}/lib/${ABI} -L${ZLIB_PREBUILT}/lib/${ABI} -Wl,-z,max-page-size=16384"
 
   if [ ! -f "${PREBUILT_DIR}/lib/${ABI}/libfontconfig.a" ]
   then
     echo "Building fontconfig for ${ABI}..."
+
+    # fontconfig bakes prefix dir into libfontconfig.a as its compiled-in fallback
+    # config. A real absolute PREFIX embeds this checkout's build-machine
+    # path, which doesn't exist on-device.
+    mkdir -p "${PREFIX}"
+    ln -sfn . "${PREFIX}/usr"
+    ln -sfn . "${PREFIX}/local"
     cd fontconfig
-    ./autogen.sh
-    ./configure --host=${TARGET} --prefix="${PREFIX}" --libdir="${PREFIX}/lib/${ABI}" --enable-static --disable-shared --disable-docs --disable-libuuid --with-arch=${CPU_FAMILY} --enable-libxml2 ac_cv_va_copy=C99
+    ./configure --host=${TARGET} --prefix=/usr/local --libdir="/usr/local/lib/${ABI}" --enable-static --disable-shared --disable-docs --with-arch=${CPU_FAMILY} --enable-libxml2 ac_cv_va_copy=C99
     make clean
     make -j${CORES}
-    make install
+    DESTDIR="${PREFIX}" make install
     cd ..
   else
     echo "Fontconfig already built for ${ABI}"
